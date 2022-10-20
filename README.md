@@ -1,2 +1,4 @@
-# FYP-Network_Contagion_Dynamics
-Final Year Project: Pair-based modelling in network contagion dynamics
+# Final Year Project: Pair-based modelling in network contagion dynamics
+Student: Benjamin Le Coz
+Supervisor: Cameron Hall
+
