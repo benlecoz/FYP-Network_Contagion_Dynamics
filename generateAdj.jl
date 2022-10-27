@@ -2,22 +2,22 @@ using GraphPlot, Graphs
 
 function generateAdj(numNodes, graphType, graphParams)
     if graphType == "complete"
-
-        Adj = ones(numNodes, numNodes) - I(numNodes)
-        
-        evenlySpaced = transpose(LinRange(0, 1, numNodes + 1))
-              
-        G = Graphs.Graph(Adj)
-
-        locs_x = vec(cos.(2*pi .* evenlySpaced))
-        locs_y = vec(sin.(2*pi .* evenlySpaced))
-        
-        GraphPlot.gplot(G, locs_x, locs_y)
-
+        graph = complete_graph(numNodes)
+    
     end
 
-    return G, G_com
+    evenlySpaced = transpose(LinRange(0, 1, numNodes + 1))
 
+    locs_x = vec(cos.(2*pi .* evenlySpaced))
+    locs_y = vec(sin.(2*pi .* evenlySpaced))
+
+    graph_plot = gplot(graph, locs_x, locs_y)
+            
+    return graph, graph_plot
+   
 end
 
-G, G_com = generateAdj(8, "complete", []);
+graph, graph_plot = generateAdj(10, "complete", [])
+
+graph_plot
+
