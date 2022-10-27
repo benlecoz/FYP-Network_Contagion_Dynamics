@@ -1,5 +1,4 @@
-using GraphPlot, Graphs, LightGraphs
-
+using GraphPlot, Graphs
 
 function generateAdj(numNodes, graphType, graphParams)
     if graphType == "complete"
@@ -7,13 +6,13 @@ function generateAdj(numNodes, graphType, graphParams)
         Adj = ones(numNodes, numNodes) - I(numNodes)
         
         evenlySpaced = transpose(LinRange(0, 1, numNodes + 1))
-        
-        G_com = LightGraphs.complete_graph(numNodes)
+              
+        G = Graphs.Graph(Adj)
 
         locs_x = vec(cos.(2*pi .* evenlySpaced))
         locs_y = vec(sin.(2*pi .* evenlySpaced))
         
-        GraphPlot.gplot(G_com)
+        GraphPlot.gplot(G, locs_x, locs_y)
 
     end
 
