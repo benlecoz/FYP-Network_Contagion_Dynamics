@@ -1,6 +1,6 @@
 using GraphPlot, Graphs
 
-function generateAdj(numNodes, graphType, graphParams, graphOptions)
+function generateAdj(numNodes, graphType, graphParams)
 
     plot = "normal"
 
@@ -30,31 +30,22 @@ function generateAdj(numNodes, graphType, graphParams, graphOptions)
     
     end
 
-    if isnothing(graphOptions) 
+    if plot == "circular plotting"
+        evenlySpaced = transpose(LinRange(0, 1, numNodes + 1))
 
-    elseif graphOptions == "plot"
-
-        if plot == "circular plotting"
-            evenlySpaced = transpose(LinRange(0, 1, numNodes + 1))
-
-            locs_x = vec(cos.(2*pi .* evenlySpaced))
-            locs_y = vec(sin.(2*pi .* evenlySpaced))
-            graph_plot = gplot(graph, locs_x, locs_y)
-        
-        else
-            graph_plot = gplot(graph)
-        
-        end
-
+        locs_x = vec(cos.(2*pi .* evenlySpaced))
+        locs_y = vec(sin.(2*pi .* evenlySpaced))
+        graph_plot = gplot(graph, locs_x, locs_y)
+    
     else
-        savefig(pwd() * "\\" * graphOptions * ".png")
-
+        graph_plot = gplot(graph)
+    
     end
     
-    return graph, graph_plot
+    display(graph_plot)
+
+    return graph
    
 end
 
-generateAdj(12, "ErdosRenyi", [0.15], "plot")[2]
-
-Graphs.cycle_graph()
+graph = generateAdj(12, "ErdosRenyi", [0.8]);
