@@ -31,17 +31,6 @@ initConds[1] = 1;
 # Gillespie model parameters
 numRuns = 10^3;
 
-# function GillespieSIR(Adj, Params, initConds, t, numRuns)
-    
-# numNodes = size(Adj)[1]
-# numTimes = length(t)
-# maxTime = t[numTimes]
-# timeRes = t[2];
-# lambda = Params[1];
-# gamma = Params[2];
-
-# function runSIRGillespie(Adj, Params, initConds, t, numRuns)
-
 storedStates = zeros(numNodes, numTimes, numRuns);
 
 for kRuns = 1:numRuns
