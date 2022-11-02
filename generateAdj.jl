@@ -1,3 +1,5 @@
+module AdjGenerator
+
 using GraphPlot, Graphs
 
 function generateAdj(numNodes, graphType, graphParams)
@@ -42,10 +44,10 @@ function generateAdj(numNodes, graphType, graphParams)
     
     end
     
-    display(graph_plot)
+    # display(graph_plot)
 
     return graph
    
 end
 
-graph = generateAdj(12, "ErdosRenyi", [0.8]);
+end
