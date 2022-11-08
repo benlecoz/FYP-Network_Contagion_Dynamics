@@ -12,6 +12,7 @@ function generateAdj(numNodes, graphType, graphParams)
 
     elseif graphType == "WattsStrogatz"
         graph = watts_strogatz(numNodes, trunc(Int, graphParams[1]), graphParams[2])
+        plot = "circular plotting"
 
     elseif graphType == "BarabasiAlbert"
         graph = barabasi_albert(numNodes, graphParams[1])
