@@ -1,37 +1,21 @@
+module GillespieSIR
+
 include("./generateAdj.jl")
 using .AdjGenerator, Graphs, Distributions, SparseArrays
 using Profile, PProf, BenchmarkTools
 
-function runSIRGillespie()
-    # generate Adjacency matrix
-    numNodes = 50;
-
-    graphType = "complete";
-    graphParams = [];
+function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, modelParams::Array, maxTime::Float64, 
+                        timeRes::Float64, initConds::Array, numRuns::Int64)
 
     graph = AdjGenerator.generateAdj(numNodes, graphType, graphParams);
     Adj = adjacency_matrix(graph);
-
-    # define contagion dynamics parameters
-    lambda = 1.;
-    gamma = 0.1;
-
-    modelParams = [lambda, gamma];
-
-    # time parameters
-    maxTime = 12.;
-    timeRes = 0.01;
 
     maxTime = timeRes*ceil(maxTime/timeRes);
     t = Array(collect(Float64, 0:timeRes:maxTime)');
     numTimes = length(t);
 
-    # initial conditions with one infected node
-    initConds = zeros(Int64, numNodes, 1);
-    initConds[1] = 1;
-
-    # Gillespie model parameters
-    numRuns = 10^4;
+    lambda = modelParams[1];
+    gamma = modelParams[2];
 
     storedStates = zeros(Int64, numNodes, numTimes);
 
@@ -132,7 +116,7 @@ function runSIRGillespie()
 
             storedS = storedStates.==0;
             storedI = storedStates.==1;
-            storedR = storedStates.==2;
+            storedR = storedStates.==2;         
         
         else
 
@@ -148,13 +132,8 @@ function runSIRGillespie()
     probI = storedI/numRuns;
     probR = storedR/numRuns;
 
-    return probS, probI, probR
+    return probS, probI, probR, t, graph
 
 end
 
-# @profview runSIRGillespie()
-probS, probI, probR = runSIRGillespie();
-
-probS
-probI
-probR
+end

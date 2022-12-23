@@ -34,7 +34,7 @@ function generateAdj(numNodes, graphType, graphParams)
     end
 
     if plot == "circular plotting"
-        evenlySpaced = transpose(LinRange(0, 1, numNodes + 1))
+        evenlySpaced = transpose(LinRange(0, 1, numNodes))
 
         locs_x = vec(cos.(2*pi .* evenlySpaced))
         locs_y = vec(sin.(2*pi .* evenlySpaced))
@@ -42,10 +42,7 @@ function generateAdj(numNodes, graphType, graphParams)
     
     else
         graph_plot = gplot(graph)
-    
     end
-    
-    # display(graph_plot)
 
     return graph
    
