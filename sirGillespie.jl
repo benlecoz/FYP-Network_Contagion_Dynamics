@@ -2,7 +2,7 @@ module GillespieSIR
 
 include("./generateAdj.jl")
 using .AdjGenerator, Graphs, Distributions, SparseArrays
-using Profile, PProf, BenchmarkTools
+using Profile, PProf, BenchmarkTools, InvertedIndices 
 
 function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, modelParams::Array, maxTime::Float64, 
                         timeRes::Float64, initConds::Array, numRuns::Int64)
@@ -29,17 +29,16 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
     storedPairStates = zeros(Int64, numEdges, numTimes);
 
     # Individual and pair state arrays that will store cumulative runs
-
     # In all runs, indexing for individual states is: S=0 I=1 R=2
-    storedS, storedI, storedR = [zeros(Int64, numNodes, numTimes) for _ = 1:3]
+    storedS, storedI, storedR = [zeros(Int64, numNodes, numTimes) for _ = 1:3];
     # In all runs, indexing for pair states: SS=0 SI=1 SR=2  IS=3 II=4 IR=5  RS=6 RI=7 RR=8
-    storedSS, storedSI, storedSR, storedIS, storedII, storedIR, storedRS, storedRI, storedRR = [zeros(Int64, numEdges, numTimes) for _ = 1:9]
+    storedSS, storedSI, storedSR, storedIS, storedII, storedIR, storedRS, storedRI, storedRR = [zeros(Int64, numEdges, numTimes) for _ = 1:9];
 
     # Find edge number of specific node
     # Function allows input on whether the node in question is on the LHS, RHS or both sides of the pair making up the edge 
     function edgeArrayGen(node, side)
         if side == "both"
-            edgesNode = (findall(x->x==node, first.(edgeArray)))..., (findall(x->x==node, last.(edgeArray))...)
+            edgesNode = [(findall(x->x==node, first.(edgeArray)))..., (findall(x->x==node, last.(edgeArray))...)]
         elseif side == "LHS"
             edgesNode = findall(x->x==node, first.(edgeArray))
         elseif side == "RHS"
@@ -49,15 +48,17 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
         return edgesNode
     end
 
-    # Set all edges as S-S, except the edges connecting edge 1 to other nodes
-    storedSS[:, 1].=1;
-    storedSS[edgeArrayGen(1, "LHS"), 1].=0;
+    # Set all edges in S-S as 1, except the edges connecting node 1 to other nodes
+    storedSS[Not(edgeArrayGen(1, "both")), 1].=1
 
-    # Set all edges coming from node 1 to S-I
-    storedSI[edgeArrayGen(1, "LHS"), 1].=1;
+    # Set all edges attached to node 1 to S-I or I-S
+    storedSI[edgeArrayGen(1, "RHS"), 1].=1;
+    storedIS[edgeArrayGen(1, "LHS"), 1].=1;
 
-    # Set initial pair-wise conditions, using pair indexing S-S=0 and S-I=1
-    initPairConds = storedSI[:, 1];
+    # Set initial pair-wise conditions, using pair indexing S-S=0, S-I=1 and I-S=3
+    initPairConds = zeros(Int64, numEdges, 1);
+    initPairConds += storedSI[:, 1].==1;
+    initPairConds += 3*(storedIS[:, 1].==1);
 
     @time for kRuns = 1:numRuns 
 
@@ -225,7 +226,7 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
     storedPairAll = [storedSS, storedSI, storedSR, storedIS, storedII, storedIR, storedRS, storedRI, storedRR];
     probSS, probSI, probSR, probIS, probII, probIR, probRS, probRI, probRR = [storedPairState/numRuns for storedPairState in storedPairAll];
 
-    return probS, probI, probR, probSS, probSI, probSR, probIS, probII, probIR, probRS, probRI, probRR, t
+    return probS, probI, probR, probSS, probSI, probSR, probIS, probII, probIR, probRS, probRI, probRR, t, edgeArray
 
 end
 
