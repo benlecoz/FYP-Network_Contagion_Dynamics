@@ -29,9 +29,9 @@ function RunSIRGillespie()
     # Gillespie model parameters
     numRuns = 10^3;
 
-    probS, probI, probR, probSS, probSI, probSR, probIS, probII, probIR, probRS, probRI, probRR, t = GillespieSIR.SIRGillespie(numNodes, graphType, graphParams, modelParams, maxTime, timeRes, initConds, numRuns)
+    probS, probI, probR, probSS, probSI, probSR, probIS, probII, probIR, probRS, probRI, probRR, t, edgeArray = GillespieSIR.SIRGillespie(numNodes, graphType, graphParams, modelParams, maxTime, timeRes, initConds, numRuns)
 
-    return probS, probI, probR, probSS, probSI, probSR, probIS, probII, probIR, probRS, probRI, probRR, t
+    return probS, probI, probR, probSS, probSI, probSR, probIS, probII, probIR, probRS, probRI, probRR, t, edgeArray
 
 end
 
