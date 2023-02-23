@@ -9,7 +9,6 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
 
     # Graph, adjacency matrix and edge array
     graph = AdjGenerator.generateAdj(numNodes, graphType, graphParams);
-    Adj = adjacency_matrix(graph);
     edgeArray = Tuple.(edges(graph));
 
     # Time components
@@ -24,6 +23,9 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
     # Number of nodes
     numEdges = length(edgeArray);
 
+    # Index of all initially infected nodes
+    initInfNodes = [findall(x->x==1, initConds)[i][1] for i=1:length(findall(x->x==1, initConds))];
+
     # Arrays of individual and pair states that will be used and reset at every run 
     storedStates = zeros(Int64, numNodes, numTimes);
     storedPairStates = zeros(Int64, numEdges, numTimes);
@@ -35,28 +37,28 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
     storedSS, storedSI, storedSR, storedIS, storedII, storedIR, storedRS, storedRI, storedRR = [zeros(Int64, numEdges, numTimes) for _ = 1:9];
 
     # Find edge number of specific node
-    # Function allows input on whether the node in question is on the LHS, RHS or both sides of the pair making up the edge 
-    function edgeArrayGen(node, side)
+    # Function allows input on whether the node in question is on the LHS, RHS or both sides of the edge pair 
+    function edgeArrayGenList(nodeList, side)
         if side == "both"
-            edgesNode = [(findall(x->x==node, first.(edgeArray)))..., (findall(x->x==node, last.(edgeArray))...)]
+            edgesNodeList = unique([reduce(vcat, [findall(x->x==i, first.(edgeArray)) for i in nodeList])..., (reduce(vcat, [findall(x->x==i, last.(edgeArray)) for i in nodeList])...)])
         elseif side == "LHS"
-            edgesNode = findall(x->x==node, first.(edgeArray))
+            edgesNodeList = reduce(vcat, [findall(x->x==i, first.(edgeArray)) for i in nodeList])
         elseif side == "RHS"
-            edgesNode = findall(x->x==node, last.(edgeArray))
+            edgesNodeList = reduce(vcat, [findall(x->x==i, last.(edgeArray)) for i in nodeList])
         end
 
-        return edgesNode
+        return edgesNodeList
     end
 
-    # Set all edges in S-S as 1, except the edges connecting node 1 to other nodes
-    storedSS[Not(edgeArrayGen(1, "both")), 1].=1
+    # Set all edges in S-S as 1, except the edges connecting initally infected node(s) to other nodes
+    storedSS[Not(edgeArrayGenList(initInfNodes, "both")), 1].=1;
 
-    # Set all edges attached to node 1 to S-I or I-S
-    storedSI[edgeArrayGen(1, "RHS"), 1].=1;
-    storedIS[edgeArrayGen(1, "LHS"), 1].=1;
+    # Set all edges attached to initially infected node(s) to S-I or I-S
+    storedSI[edgeArrayGenList(initInfNodes, "RHS"), 1].=1;
+    storedIS[edgeArrayGenList(initInfNodes, "LHS"), 1].=1;
 
     # Set initial pair-wise conditions, using pair indexing S-S=0, S-I=1 and I-S=3
-    initPairConds = zeros(Int64, numEdges, 1);
+    initPairConds = vec(zeros(Int64, numEdges, 1));
     initPairConds += storedSI[:, 1].==1;
     initPairConds += 3*(storedIS[:, 1].==1);
 
@@ -68,7 +70,7 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
 
         # Set/Reset current state as the initial individual and pair-based states
         currState = copy(initConds);
-        currPairState = copy(initPairConds)
+        currPairState = copy(initPairConds);
 
         # Set/Reset stored states arrays to initial conditions
         storedStates[:, tPosition] = currState;
@@ -80,24 +82,18 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
         infNodesList = zeros(Int, numNodes, 1);
         infNodesList[1:numInfNodes] = findall(infNodes);
 
-        # Links between infected and susceptible nodes in adjacency matrix
-        possLinks = copy(Adj);
-        possLinks[:, infNodesList[1:numInfNodes]].=0;
-        possLinks = dropzeros(possLinks);
-
-        # Index of S-I pairings
-        vulNodes = possLinks[infNodesList[1:numInfNodes], :];
-        vulNodesPairs = Tuple.(findall(x->x==1, vulNodes));
-
         # Iterate Gillespie algorithm till the max time is reached
         while currTime < maxTime
+
+            # Define the vulnerable edges as pairs of S-I or I-S nodes
+            newVulEdges = sort(reduce(vcat, [findall(x->x==i, vec(currPairState)) for i in [1, 3]]))
 
             # Define current state before any events take place, to copy over Tau-leaps that were skipped
             oldState = copy(currState);
             oldPairState = copy(currPairState);
 
             # Probability of an event happening, infection or recovery, based on the number of susceptible and infected nodes
-            infRate = lambda*size(vulNodesPairs)[1];
+            infRate = lambda*size(newVulEdges)[1];
             recRate = gamma*sum(infNodes);
             eventRate = infRate + recRate;
 
@@ -110,20 +106,19 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
             # if the random value is within the probability that the event occurring is an infection, then a node is infected
             if randEventProb < infRate/eventRate
 
-                # Choose a random infected node, update current state and infected nodes list to infected
-                newlyInfNode = rand(vulNodesPairs)[2];
+                # Choose a random infected edge, then choose extract newly infected node based on S-I or I-S status
+                newlyInfEdge = rand(newVulEdges);
+                newlyInfNode = currPairState[newlyInfEdge, 1] == 1 ? edgeArray[newlyInfEdge][1] : edgeArray[newlyInfEdge][2]
+                
+                # Update current state vector, number of nodes and list describing infection
                 currState[newlyInfNode] = 1;
                 infNodes[newlyInfNode] = true;
                 numInfNodes += 1;
                 infNodesList[numInfNodes] = newlyInfNode;
 
-                # Possible infection links to the newly infected node are removed from the adjacency matrix
-                possLinks[:, newlyInfNode] .= 0;
-                possLinks = dropzeros(possLinks);
-
                 # Associated pair states are updated to take into account node switching from S to I
-                currPairState[edgeArrayGen(newlyInfNode, "LHS")] .+= 3;
-                currPairState[edgeArrayGen(newlyInfNode, "RHS")] .+= 1;
+                currPairState[edgeArrayGenList(newlyInfNode, "LHS")] .+= 3;
+                currPairState[edgeArrayGenList(newlyInfNode, "RHS")] .+= 1;
             
             # Otherwise a node recovers
             else
@@ -132,26 +127,18 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
                 chosenRecNodeIndex = rand(1:numInfNodes);
                 newlyRecNode = infNodesList[chosenRecNodeIndex];
 
-                # Update list and number of infected nodes
+                # Update lists and number of infected nodes
                 infNodesList[chosenRecNodeIndex] = infNodesList[numInfNodes];
                 infNodesList[numInfNodes] = 0;
                 currState[newlyRecNode] = 2;
                 infNodes[newlyRecNode] = false;
                 numInfNodes -= 1;
 
-                # remove possible infection links coming out of the newly recovered node
-                possLinks[newlyRecNode, :] .= 0;
-                possLinks = dropzeros(possLinks);
-
                 # Associated pair states are updated to take into account node switching from I to R
-                currPairState[edgeArrayGen(newlyRecNode, "LHS")] .+= 3;
-                currPairState[edgeArrayGen(newlyRecNode, "RHS")] .+= 1;
+                currPairState[edgeArrayGenList(newlyRecNode, "LHS")] .+= 3;
+                currPairState[edgeArrayGenList(newlyRecNode, "RHS")] .+= 1;
             
             end
-            
-            # Update vulnerable node list to either add nodes connected to newly infected node, or remove infection links from newly recovered node  
-            vulNodes = possLinks[infNodesList[1:numInfNodes], :];
-            vulNodesPairs = Tuple.(findall(x->x==1, vulNodes));
 
             # Update timestep
             currTime += timeStep;
@@ -168,11 +155,8 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
             # If the event timestep is multiple times larger than designated timestep, save replicated states to stored array
             # If the event timestep is smaller than designated timestep, simulate more events until the designated timestep is reached
             if tPositionNew > tPosition
-                oldStateRepeated = oldState*ones(Int64, 1, tPositionNew - tPosition);
-                storedStates[:, (tPosition+1):tPositionNew] = oldStateRepeated;
-
-                oldPairStateRepeated = oldPairState*ones(Int64, 1, tPositionNew - tPosition);
-                storedPairStates[:, (tPosition+1):tPositionNew] = oldPairStateRepeated;
+                storedStates[:, (tPosition+1):tPositionNew] .= oldState;
+                storedPairStates[:, (tPosition+1):tPositionNew] .= oldPairState;
 
                 tPosition = tPositionNew;
             end
@@ -184,13 +168,10 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
 
         end
 
-        # Repeat final state until the end of the time array if the simulation was stopped early
+        # Repeat final state until the end of the time array if the simulation is stopped early
         if tPosition < numTimes
-            endStateRepeated = currState*ones(Int64, 1, numTimes - tPosition);
-            endPairStateRepeated = currPairState*ones(Int64, 1, numTimes - tPosition);
-
-            storedStates[:, (tPosition+1):numTimes] = endStateRepeated;
-            storedPairStates[:, (tPosition+1):numTimes] = endPairStateRepeated;
+            storedStates[:, (tPosition+1):numTimes] .= currState;
+            storedPairStates[:, (tPosition+1):numTimes] .= currPairState;
         end
 
         # Save first simulated run to boolean state arrays based on indexing 
