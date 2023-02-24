@@ -7,16 +7,16 @@ using Profile, PProf, BenchmarkTools, InvertedIndices
 function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, modelParams::Array, maxTime::Float64, 
                         timeRes::Float64, initConds::Array, numRuns::Int64)
 
-    # Graph, adjacency matrix and edge array
+    # Generate graph and edge array
     graph = AdjGenerator.generateAdj(numNodes, graphType, graphParams);
     edgeArray = Tuple.(edges(graph));
 
-    # Time components
+    # Extract time components as time array
     maxTime = timeRes*ceil(maxTime/timeRes);
     t = Array(collect(Float64, 0:timeRes:maxTime)');
     numTimes = length(t);
 
-    # Model parameters
+    # Model parameters for infection and recovery
     lambda = modelParams[1];
     gamma = modelParams[2];
 
@@ -36,7 +36,7 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
     # In all runs, indexing for pair states: SS=0 SI=1 SR=2  IS=3 II=4 IR=5  RS=6 RI=7 RR=8
     storedSS, storedSI, storedSR, storedIS, storedII, storedIR, storedRS, storedRI, storedRR = [zeros(Int64, numEdges, numTimes) for _ = 1:9];
 
-    # Find edge number of specific node
+    # Find edgeArray index of edges for node(s) in nodeList
     # Function allows input on whether the node in question is on the LHS, RHS or both sides of the edge pair 
     function edgeArrayGenList(nodeList, side)
         if side == "both"
@@ -50,10 +50,10 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
         return edgesNodeList
     end
 
-    # Set all edges in S-S as 1, except the edges connecting initally infected node(s) to other nodes
+    # Set all edges in S-S array as True, except the edges connecting initally infected node(s) to other nodes
     storedSS[Not(edgeArrayGenList(initInfNodes, "both")), 1].=1;
 
-    # Set all edges attached to initially infected node(s) to S-I or I-S
+    # Set all edges attached to initially infected node(s) as True for S-I or I-S arrays 
     storedSI[edgeArrayGenList(initInfNodes, "RHS"), 1].=1;
     storedIS[edgeArrayGenList(initInfNodes, "LHS"), 1].=1;
 
@@ -88,7 +88,7 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
             # Define the vulnerable edges as pairs of S-I or I-S nodes
             newVulEdges = sort(reduce(vcat, [findall(x->x==i, vec(currPairState)) for i in [1, 3]]))
 
-            # Define current state before any events take place, to copy over Tau-leaps that were skipped
+            # Define current state before any events take place, to copy over Tau-leaps that might be skipped
             oldState = copy(currState);
             oldPairState = copy(currPairState);
 
@@ -200,12 +200,10 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
     end
 
     # Calculate individual state probabilities averaged over the number of runs
-    storedAll = [storedS, storedI, storedR];
-    probS, probI, probR = [storedState/numRuns for storedState in storedAll];
+    probS, probI, probR = [storedState/numRuns for storedState in [storedS, storedI, storedR]];
 
     # Calculate pair state probabilities averaged over the number of runs
-    storedPairAll = [storedSS, storedSI, storedSR, storedIS, storedII, storedIR, storedRS, storedRI, storedRR];
-    probSS, probSI, probSR, probIS, probII, probIR, probRS, probRI, probRR = [storedPairState/numRuns for storedPairState in storedPairAll];
+    probSS, probSI, probSR, probIS, probII, probIR, probRS, probRI, probRR = [storedPairState/numRuns for storedPairState in [storedSS, storedSI, storedSR, storedIS, storedII, storedIR, storedRS, storedRI, storedRR]];
 
     return probS, probI, probR, probSS, probSI, probSR, probIS, probII, probIR, probRS, probRI, probRR, t, edgeArray
 
