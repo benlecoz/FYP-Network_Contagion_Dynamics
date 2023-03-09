@@ -20,7 +20,7 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
     lambda = modelParams[1];
     gamma = modelParams[2];
 
-    # Number of nodes
+    # Number of edges
     numEdges = length(edgeArray);
 
     # Index of all initially infected nodes
@@ -50,17 +50,10 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
         return edgesNodeList
     end
 
-    # Set all edges in S-S array as True, except the edges connecting initally infected node(s) to other nodes
-    storedSS[Not(edgeArrayGenList(initInfNodes, "both")), 1].=1;
-
-    # Set all edges attached to initially infected node(s) as True for S-I or I-S arrays 
-    storedSI[edgeArrayGenList(initInfNodes, "RHS"), 1].=1;
-    storedIS[edgeArrayGenList(initInfNodes, "LHS"), 1].=1;
-
     # Set initial pair-wise conditions, using pair indexing S-S=0, S-I=1 and I-S=3
     initPairConds = vec(zeros(Int64, numEdges, 1));
-    initPairConds += storedSI[:, 1].==1;
-    initPairConds += 3*(storedIS[:, 1].==1);
+    initPairConds[edgeArrayGenList(initInfNodes, "RHS")] .= 1;
+    initPairConds[edgeArrayGenList(initInfNodes, "LHS")] .= 3;
 
     @time for kRuns = 1:numRuns 
 
@@ -76,17 +69,14 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
         storedStates[:, tPosition] = currState;
         storedPairStates[:, tPosition] = currPairState;
 
-        # List of infected nodes
-        infNodes = vec(initConds.==1);
-        numInfNodes = sum(infNodes);
-        infNodesList = zeros(Int, numNodes, 1);
-        infNodesList[1:numInfNodes] = findall(infNodes);
+        # Initialise the number of infected nodes, which is used to test whether there any infected nodes remaining
+        numInfNodes = sum(vec(initConds.==1));
 
         # Iterate Gillespie algorithm till the max time is reached
         while currTime < maxTime
 
             # Define the vulnerable edges as pairs of S-I or I-S nodes
-            newVulEdges = sort(reduce(vcat, [findall(x->x==i, vec(currPairState)) for i in [1, 3]]))
+            newVulEdges = sort(reduce(vcat, [findall(x->x==i, vec(currPairState)) for i in [1, 3]]));
 
             # Define current state before any events take place, to copy over Tau-leaps that might be skipped
             oldState = copy(currState);
@@ -94,7 +84,7 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
 
             # Probability of an event happening, infection or recovery, based on the number of susceptible and infected nodes
             infRate = lambda*size(newVulEdges)[1];
-            recRate = gamma*sum(infNodes);
+            recRate = gamma*sum(vec(currState.==1));
             eventRate = infRate + recRate;
 
             # Next timestep at which an event happens
@@ -110,11 +100,9 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
                 newlyInfEdge = rand(newVulEdges);
                 newlyInfNode = currPairState[newlyInfEdge, 1] == 1 ? edgeArray[newlyInfEdge][1] : edgeArray[newlyInfEdge][2]
                 
-                # Update current state vector, number of nodes and list describing infection
+                # Update current state vector and number of infected nodes 
                 currState[newlyInfNode] = 1;
-                infNodes[newlyInfNode] = true;
                 numInfNodes += 1;
-                infNodesList[numInfNodes] = newlyInfNode;
 
                 # Associated pair states are updated to take into account node switching from S to I
                 currPairState[edgeArrayGenList(newlyInfNode, "LHS")] .+= 3;
@@ -124,14 +112,10 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
             else
                 
                 # Choose recovered node
-                chosenRecNodeIndex = rand(1:numInfNodes);
-                newlyRecNode = infNodesList[chosenRecNodeIndex];
+                newlyRecNode = rand(findall(x->x==1, currState))[1]
 
-                # Update lists and number of infected nodes
-                infNodesList[chosenRecNodeIndex] = infNodesList[numInfNodes];
-                infNodesList[numInfNodes] = 0;
+                # Update current state vector and number of infected nodes
                 currState[newlyRecNode] = 2;
-                infNodes[newlyRecNode] = false;
                 numInfNodes -= 1;
 
                 # Associated pair states are updated to take into account node switching from I to R
@@ -162,7 +146,7 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
             end
 
             # Stop simulation when there are no more infected nodes left
-            if sum(infNodes) < 1
+            if numInfNodes < 1
                 currTime = maxTime;
             end
 
@@ -174,29 +158,22 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
             storedPairStates[:, (tPosition+1):numTimes] .= currPairState;
         end
 
-        # Save first simulated run to boolean state arrays based on indexing 
-        if kRuns == 1
-            storedS, storedI, storedR = [storedStates.==i for i=0:2]
-            storedSS, storedSI, storedSR, storedIS, storedII, storedIR, storedRS, storedRI, storedRR  = [storedPairStates.==i for i=0:8]
-        
-        # Add subsequent runs to stored boolean state arrays
-        else
+        # Add runs to stored boolean state arrays
 
-            storedS += storedStates.==0;
-            storedI += storedStates.==1;
-            storedR += storedStates.==2;
+        storedS += storedStates.==0;
+        storedI += storedStates.==1;
+        storedR += storedStates.==2;
 
-            storedSS += storedPairStates.==0;
-            storedSI += storedPairStates.==1;
-            storedSR += storedPairStates.==2;
-            storedIS += storedPairStates.==3;
-            storedII += storedPairStates.==4;
-            storedIR += storedPairStates.==5;
-            storedRS += storedPairStates.==6;
-            storedRI += storedPairStates.==7;
-            storedRR += storedPairStates.==8;
-        
-        end
+        storedSS += storedPairStates.==0;
+        storedSI += storedPairStates.==1;
+        storedSR += storedPairStates.==2;
+        storedIS += storedPairStates.==3;
+        storedII += storedPairStates.==4;
+        storedIR += storedPairStates.==5;
+        storedRS += storedPairStates.==6;
+        storedRI += storedPairStates.==7;
+        storedRR += storedPairStates.==8;
+
     end
 
     # Calculate individual state probabilities averaged over the number of runs
