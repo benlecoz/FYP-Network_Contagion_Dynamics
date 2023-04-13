@@ -1,6 +1,6 @@
 module AdjGenerator
 
-using GraphPlot, Graphs
+using Graphs
 
 function generateAdj(numNodes, graphType, graphParams)
 
@@ -18,11 +18,8 @@ function generateAdj(numNodes, graphType, graphParams)
         graph = barabasi_albert(numNodes, graphParams[1])
     
     elseif graphType == "barbell"
-        n = trunc(Int, floor(numNodes/2))
+        n = trunc(Int, floor(numNodes/2));
         graph = barbell_graph(n, n)
-    
-    elseif graphType == "binaryTree"
-        graph = binary_tree(numNodes)
     
     elseif graphType == "ErdosRenyi"
         graph = erdos_renyi(numNodes, graphParams[1])
@@ -31,21 +28,32 @@ function generateAdj(numNodes, graphType, graphParams)
         graph = cycle_graph(numNodes)
         plot = "circular plotting"
     
-    end
+    elseif graphType == "tree"
+        graph = SimpleGraph{Int64}(numNodes)
 
-    if plot == "circular plotting"
-        evenlySpaced = transpose(LinRange(0, 1, numNodes))
+        for i in 2:numNodes
+            parent = rand(1:i-1)
+            add_edge!(graph, parent, i)
+        end
 
-        locs_x = vec(cos.(2*pi .* evenlySpaced))
-        locs_y = vec(sin.(2*pi .* evenlySpaced))
-        graph_plot = gplot(graph, locs_x, locs_y)
-    
-    else
-        graph_plot = gplot(graph)
     end
 
     return graph
    
+end
+
+# Find edgeArray index of edges for node(s) in nodeList
+# Function allows input on whether the node in question is on the LHS, RHS or both sides of the edge pair 
+function edgeArrayGenList(edgeArray, nodeList, side)
+    if side == "both"
+        edgesNodeList = unique([reduce(vcat, [findall(x->x==i, first.(edgeArray)) for i in nodeList])..., (reduce(vcat, [findall(x->x==i, last.(edgeArray)) for i in nodeList])...)])
+    elseif side == "LHS"
+        edgesNodeList = reduce(vcat, [findall(x->x==i, first.(edgeArray)) for i in nodeList])
+    elseif side == "RHS"
+        edgesNodeList = reduce(vcat, [findall(x->x==i, last.(edgeArray)) for i in nodeList])
+    end
+
+    return edgesNodeList
 end
 
 end
