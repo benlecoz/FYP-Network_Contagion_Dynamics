@@ -1,15 +1,11 @@
 module GillespieSIR
 
 include("./generateAdj.jl")
-using .AdjGenerator, Graphs, Distributions, SparseArrays
-using Profile, PProf, BenchmarkTools, InvertedIndices 
+using .AdjGenerator
+using Graphs, Distributions, SparseArrays
+using Profile, PProf, BenchmarkTools, InvertedIndices
 
-function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, modelParams::Array, maxTime::Float64, 
-                        timeRes::Float64, initConds::Array, numRuns::Int64)
-
-    # Generate graph and edge array
-    graph = AdjGenerator.generateAdj(numNodes, graphType, graphParams);
-    edgeArray = Tuple.(edges(graph));
+function SIRGillespie(edgeArray::Array, graph::SimpleGraph, modelParams::Array, maxTime::Float64, timeRes::Float64, initInfNodes::Array, numRuns::Int64)
 
     # Extract time components as time array
     maxTime = timeRes*ceil(maxTime/timeRes);
@@ -17,14 +13,15 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
     numTimes = length(t);
 
     # Model parameters for infection and recovery
-    lambda = modelParams[1];
-    gamma = modelParams[2];
+    lambda, gamma = modelParams;
 
-    # Number of edges
+    # Number of nodes and edges
+    numNodes = nv(graph);
     numEdges = length(edgeArray);
 
-    # Index of all initially infected nodes
-    initInfNodes = [findall(x->x==1, initConds)[i][1] for i=1:length(findall(x->x==1, initConds))];
+    # Create initial conditions vector from initially infected nodes
+    initConds = zeros(Int64, numNodes, 1);
+    initConds[initInfNodes] .= 1;
 
     # Arrays of individual and pair states that will be used and reset at every run 
     storedStates = zeros(Int64, numNodes, numTimes);
@@ -33,29 +30,23 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
     # Individual and pair state arrays that will store cumulative runs
     # In all runs, indexing for individual states is: S=0 I=1 R=2
     storedS, storedI, storedR = [zeros(Int64, numNodes, numTimes) for _ = 1:3];
+    
     # In all runs, indexing for pair states: SS=0 SI=1 SR=2  IS=3 II=4 IR=5  RS=6 RI=7 RR=8
     storedSS, storedSI, storedSR, storedIS, storedII, storedIR, storedRS, storedRI, storedRR = [zeros(Int64, numEdges, numTimes) for _ = 1:9];
 
-    # Find edgeArray index of edges for node(s) in nodeList
-    # Function allows input on whether the node in question is on the LHS, RHS or both sides of the edge pair 
-    function edgeArrayGenList(nodeList, side)
-        if side == "both"
-            edgesNodeList = unique([reduce(vcat, [findall(x->x==i, first.(edgeArray)) for i in nodeList])..., (reduce(vcat, [findall(x->x==i, last.(edgeArray)) for i in nodeList])...)])
-        elseif side == "LHS"
-            edgesNodeList = reduce(vcat, [findall(x->x==i, first.(edgeArray)) for i in nodeList])
-        elseif side == "RHS"
-            edgesNodeList = reduce(vcat, [findall(x->x==i, last.(edgeArray)) for i in nodeList])
-        end
-
-        return edgesNodeList
-    end
-
     # Set initial pair-wise conditions, using pair indexing S-S=0, S-I=1 and I-S=3
     initPairConds = vec(zeros(Int64, numEdges, 1));
-    initPairConds[edgeArrayGenList(initInfNodes, "RHS")] .= 1;
-    initPairConds[edgeArrayGenList(initInfNodes, "LHS")] .= 3;
+    initPairConds[AdjGenerator.edgeArrayGenList(edgeArray, initInfNodes, "RHS")] .= 1;
+    initPairConds[AdjGenerator.edgeArrayGenList(edgeArray, initInfNodes, "LHS")] .= 3;
 
-    @time for kRuns = 1:numRuns 
+    # Ensure that edges connecting two initially infected nodes are not accidentally marked as S-I or I-S, but instead I-I
+    for i in AdjGenerator.edgeArrayGenList(edgeArray, initInfNodes, "both")
+        if in.(first.(edgeArray)[i], Ref(initInfNodes)) & in.(last.(edgeArray)[i], Ref(initInfNodes))
+            initPairConds[i] = 4;
+        end
+    end
+
+    for kRuns = 1:numRuns
 
         # Current time and position in time array
         currTime = 0.0;
@@ -75,12 +66,12 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
         # Iterate Gillespie algorithm till the max time is reached
         while currTime < maxTime
 
-            # Define the vulnerable edges as pairs of S-I or I-S nodes
-            newVulEdges = sort(reduce(vcat, [findall(x->x==i, vec(currPairState)) for i in [1, 3]]));
-
             # Define current state before any events take place, to copy over Tau-leaps that might be skipped
             oldState = copy(currState);
             oldPairState = copy(currPairState);
+
+            # Define the vulnerable edges as pairs of S-I or I-S nodes
+            newVulEdges = sort(reduce(vcat, [findall(x->x==i, vec(currPairState)) for i in [1, 3]]));
 
             # Probability of an event happening, infection or recovery, based on the number of susceptible and infected nodes
             infRate = lambda*size(newVulEdges)[1];
@@ -100,13 +91,13 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
                 newlyInfEdge = rand(newVulEdges);
                 newlyInfNode = currPairState[newlyInfEdge, 1] == 1 ? edgeArray[newlyInfEdge][1] : edgeArray[newlyInfEdge][2]
                 
-                # Update current state vector and number of infected nodes 
+                # Update current state vector and number of infected nodes
                 currState[newlyInfNode] = 1;
                 numInfNodes += 1;
 
                 # Associated pair states are updated to take into account node switching from S to I
-                currPairState[edgeArrayGenList(newlyInfNode, "LHS")] .+= 3;
-                currPairState[edgeArrayGenList(newlyInfNode, "RHS")] .+= 1;
+                currPairState[AdjGenerator.edgeArrayGenList(edgeArray, newlyInfNode, "LHS")] .+= 3;
+                currPairState[AdjGenerator.edgeArrayGenList(edgeArray, newlyInfNode, "RHS")] .+= 1;
             
             # Otherwise a node recovers
             else
@@ -119,8 +110,8 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
                 numInfNodes -= 1;
 
                 # Associated pair states are updated to take into account node switching from I to R
-                currPairState[edgeArrayGenList(newlyRecNode, "LHS")] .+= 3;
-                currPairState[edgeArrayGenList(newlyRecNode, "RHS")] .+= 1;
+                currPairState[AdjGenerator.edgeArrayGenList(edgeArray, newlyRecNode, "LHS")] .+= 3;
+                currPairState[AdjGenerator.edgeArrayGenList(edgeArray, newlyRecNode, "RHS")] .+= 1;
             
             end
 
@@ -157,9 +148,7 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
             storedStates[:, (tPosition+1):numTimes] .= currState;
             storedPairStates[:, (tPosition+1):numTimes] .= currPairState;
         end
-
-        # Add runs to stored boolean state arrays
-
+        
         storedS += storedStates.==0;
         storedI += storedStates.==1;
         storedR += storedStates.==2;
@@ -182,7 +171,7 @@ function SIRGillespie(numNodes::Int64, graphType::String, graphParams::Array, mo
     # Calculate pair state probabilities averaged over the number of runs
     probSS, probSI, probSR, probIS, probII, probIR, probRS, probRI, probRR = [storedPairState/numRuns for storedPairState in [storedSS, storedSI, storedSR, storedIS, storedII, storedIR, storedRS, storedRI, storedRR]];
 
-    return probS, probI, probR, probSS, probSI, probSR, probIS, probII, probIR, probRS, probRI, probRR, t, edgeArray
+    return probS, probI, probR, probSS, probSI, probSR, probIS, probII, probIR, probRS, probRI, probRR, t
 
 end
 
