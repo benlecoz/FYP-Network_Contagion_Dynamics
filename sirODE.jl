@@ -1,77 +1,51 @@
-include("./generateAdj.jl")
-using .AdjGenerator, Graphs, SparseArrays
-using DifferentialEquations, BenchmarkTools
-using Plots
-using InvertedIndices
+module sirODE
 
-numNodes = 100;
+using Graphs, SparseArrays, DifferentialEquations
+using Plots, InvertedIndices, BenchmarkTools
 
-graphType = "ErdosRenyi";
-graphParams = [0.05];
+function SIRODE(edgeArray::Array, graph::SimpleGraph, modelParams::Array, maxTime::Float64, timeRes::Float64, initInfNodes::Array)
 
-lambda = 1;
-gamma = 0.1;
-modelParams = [lambda, gamma];
+    lambda, gamma = modelParams;
+    numNodes = nv(graph);
 
-maxTime = 50.0;
-timeRes = 0.01;
+    initConds = zeros(Int64, numNodes, 2);
+    initConds[initInfNodes, 2] .= 1;
+    initConds[Not(initInfNodes), 1] .= 1;
 
-# function sirODE(numNodes::Int64, graphType::String, graphParams::Array, modelParams::Array, maxTime::Float64, 
-#     timeRes::Float64, initConds::Array)
+    maxTime = timeRes*ceil(maxTime/timeRes);
+    t = Array(collect(Float64, 0:timeRes:maxTime)');
 
-graph = AdjGenerator.generateAdj(numNodes, graphType, graphParams);
-edgeArray = Tuple.(edges(graph));
+    u0 = [initConds[:, 1]; initConds[:, 2]];
 
-initInfNodes = [1, 3];
+    function diffEq(du, u, p, t)
 
-initConds = zeros(Int64, nv(graph), 2);
-initConds[initInfNodes, 2] .= 1;
-initConds[Not(initInfNodes), 1] .= 1;
+        lambda, gamma = p
 
-maxTime = timeRes*ceil(maxTime/timeRes);
-t = Array(collect(Float64, 0:timeRes:maxTime)');
+        s = u[1 : numNodes];
+        i = u[(numNodes + 1) : 2*numNodes];
 
-function edgeArrayGenList(nodeList, side)
-    if side == "both"
-        edgesNodeList = unique([reduce(vcat, [findall(x->x==i, first.(edgeArray)) for i in nodeList])..., (reduce(vcat, [findall(x->x==i, last.(edgeArray)) for i in nodeList])...)])
-    elseif side == "LHS"
-        edgesNodeList = reduce(vcat, [findall(x->x==i, first.(edgeArray)) for i in nodeList])
-    elseif side == "RHS"
-        edgesNodeList = reduce(vcat, [findall(x->x==i, last.(edgeArray)) for i in nodeList])
-    end
+        adjIndex = (first.(edgeArray) .- 1) * numNodes + last.(edgeArray);
 
-    return edgesNodeList
-end;
+        infRates = zeros(numNodes, numNodes);
+        infRates[adjIndex] = lambda .* s[last.(edgeArray)] .* i[first.(edgeArray)];
+        totalInfRate = sum(infRates, dims = 2);
 
-u0 = [initConds[:, 1]; initConds[:, 2]];
+        du[1 : numNodes] .= -totalInfRate;
+        du[(numNodes + 1) : 2*numNodes] .= totalInfRate .- gamma*i
 
+    end;
 
-function diffEq(du, u, p, t)
+    p = [lambda, gamma];
 
-    s = u[1 : p[1]];
-    i = u[(p[1] + 1) : 2*p[1]];
+    prob = ODEProblem(diffEq, u0, (0, maxTime), p, dt = 0.01, saveat=t);
+    sol = solve(prob);
 
-    adjIndex = (first.(edgeArray) .- 1) * p[1] + last.(edgeArray);
+    sSol = sol[1:numNodes, :];
+    iSol = sol[(numNodes + 1):2*numNodes, :];
+    rSol = 1 .- sSol .- iSol;
 
-    infRates = zeros(p[1], p[1]);
-    infRates[adjIndex] = lambda .* s[last.(edgeArray)] .* i[first.(edgeArray)];
-    totalInfRate = sum(infRates, dims = 2);
+    return sSol, iSol, rSol
 
-    du[1 : p[1]] .= -totalInfRate;
-    du[(p[1] + 1) : 2*p[1]] .= totalInfRate .- gamma*i
+end
 
-end;
-
-p = [nv(graph), numEdges];
-
-prob = ODEProblem(diffEq, u0, (0, maxTime), p, dt = 0.01, saveat=t);
-sol = solve(prob);
-
-sSol = sol[1:p[1], :];
-iSol = sol[(p[1] + 1):2*p[1], :];
-rSol = 1 .- sSol .- iSol;
-
-plot(sSol', label="")
-plot(iSol', label="")
-plot(rSol', label="")
-
+end
