@@ -30,9 +30,26 @@ function generateAdj(numNodes, graphType, graphParams)
     
     elseif graphType == "tree"
         graph = SimpleGraph{Int64}(numNodes)
+        depth = zeros(Int64, numNodes)
 
         for i in 2:numNodes
             parent = rand(1:i-1)
+            add_edge!(graph, parent, i)
+
+            if i==2
+                depth[i] = 1
+            else
+                depth[i] = depth[parent] + 1
+            end
+        end
+
+        return graph, depth
+
+    elseif graphType == "chain"
+        graph = SimpleGraph{Int64}(numNodes)
+
+        for i in 2:numNodes
+            parent = i-1
             add_edge!(graph, parent, i)
         end
 

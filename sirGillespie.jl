@@ -1,4 +1,4 @@
-module GillespieSIR
+module sirGillespie
 
 include("./generateAdj.jl")
 using .AdjGenerator

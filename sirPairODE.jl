@@ -17,7 +17,7 @@ function SIRPairODE(edgeArray::Array, graph::SimpleGraph, modelParams::Array, ma
         push!(edgeArrayNew, reverse(t))
     end;
 
-    # calculate the number of nodes in the initial and the extended arrays of edges
+    # calculate the number of edges in the initial and the extended arrays of edges
     numEdges = length(edgeArrayNew);
     numEdgesTrue = length(edgeArray);
     
@@ -29,9 +29,6 @@ function SIRPairODE(edgeArray::Array, graph::SimpleGraph, modelParams::Array, ma
     # extract time components
     maxTime = timeRes*ceil(maxTime/timeRes);
     t = Array(collect(Float64, 0:timeRes:maxTime)');
-
-    # calculate number of directed edges 
-    numEdges = length(edgeArrayNew);
 
     # ensure that edges containing two initially infected nodes are not accidentally marked as S-I 
     initIIEdges = zeros(Int64, 0);
