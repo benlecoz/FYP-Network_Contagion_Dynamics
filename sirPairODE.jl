@@ -7,6 +7,7 @@ using Plots, InvertedIndices, BenchmarkTools
 
 function SIRPairODE(edgeArray::Array, graph::SimpleGraph, modelParams::Array, maxTime::Float64, timeRes::Float64, initInfNodes::Array)
 
+    # extract model parameters and the number of nodes from the inputs
     lambda, gamma = modelParams;
     numNodes = nv(graph);
     
@@ -15,8 +16,11 @@ function SIRPairODE(edgeArray::Array, graph::SimpleGraph, modelParams::Array, ma
     for (i, t) in pairs(edgeArray)
         push!(edgeArrayNew, reverse(t))
     end;
-    edgeArrayNew = sort(edgeArrayNew);
 
+    # calculate the number of nodes in the initial and the extended arrays of edges
+    numEdges = length(edgeArrayNew);
+    numEdgesTrue = length(edgeArray);
+    
     # set the initial conditions of each nodes
     initConds = zeros(Int64, numNodes, 2);
     initConds[initInfNodes, 2] .= 1;
@@ -68,20 +72,23 @@ function SIRPairODE(edgeArray::Array, graph::SimpleGraph, modelParams::Array, ma
         ss = u[(2*numNodes + 1) : (2*numNodes + numEdges)];
         si = u[(2*numNodes + numEdges + 1) : end];
 
+        # since the edgeArray is mirrored at the halfway point, the I-S array is a pivot of the S-I array at the halfway point
+        is = [si[numEdgesTrue+1:end]; si[1:numEdgesTrue]];
+
         # for each node, calculate the number of times the node is on the LHS of a S-I pairing
         sumSI = zeros(numNodes, 1);
-        for k=1:numNodes
-            sumSI[k] = lambda*sum(si[edgeArrayIndexLHS[k]])
+        for j=1:numNodes
+            sumSI[j] = lambda*sum(si[edgeArrayIndexLHS[j]])
         end
 
         # calculate the sums of S-I states, depending on whether the susceptible node is the i or j node in the SiIj expression
-        neighbourInfRHS = (sumSI[last.(edgeArrayNew)] - si) ./ s[last.(edgeArrayNew)];
+        neighbourInfRHS = (sumSI[last.(edgeArrayNew)] - is) ./ s[last.(edgeArrayNew)];
         neighbourInfLHS = (sumSI[first.(edgeArrayNew)] - si) ./ s[first.(edgeArrayNew)]; 
 
         # test if the S value in the above sums are non-zero by testing whether the result is finite
-        for i=1:numEdges
-            neighbourInfRHS[i] = isfinite(neighbourInfRHS[i]) ? neighbourInfRHS[i] : 0
-            neighbourInfLHS[i] = isfinite(neighbourInfLHS[i]) ? neighbourInfLHS[i] : 0
+        for k=1:numEdges
+            neighbourInfRHS[k] = isfinite(neighbourInfRHS[k]) ? neighbourInfRHS[k] : 0
+            neighbourInfLHS[k] = isfinite(neighbourInfLHS[k]) ? neighbourInfLHS[k] : 0
         end
 
         # set the differential equations associated with the S, I, S-S and S-I states
@@ -98,13 +105,13 @@ function SIRPairODE(edgeArray::Array, graph::SimpleGraph, modelParams::Array, ma
     sol = solve(prob);
 
     # extract the solutions of the individual states
-    sSol = sol[1:numNodes, :]
-    iSol = sol[(numNodes + 1):2*numNodes, :]
-    rSol = 1 .- sSol .- iSol
+    sSol = sol[1:numNodes, :];
+    iSol = sol[(numNodes + 1):2*numNodes, :];
+    rSol = 1 .- sSol .- iSol;
 
     # extract the solutions of the pair states
-    ssSol = sol[(2*numNodes + 1) : (2*numNodes + numEdges), :]
-    siSol = sol[(2*numNodes + numEdges + 1) : end, :]
+    ssSol = sol[(2*numNodes + 1) : (2*numNodes + numEdges), :];
+    siSol = sol[(2*numNodes + numEdges + 1) : end, :];
 
     return sSol, iSol, rSol, ssSol, siSol
 
