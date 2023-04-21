@@ -75,12 +75,12 @@ function SIRPairODE(edgeArray::Array, graph::SimpleGraph, modelParams::Array, ma
         # for each node, calculate the number of times the node is on the LHS of a S-I pairing
         sumSI = zeros(numNodes, 1);
         for j=1:numNodes
-            sumSI[j] = lambda*sum(si[edgeArrayIndexLHS[j]])
+            sumSI[j] = sum(lambda*si[edgeArrayIndexLHS[j]])
         end
 
         # calculate the sums of S-I states, depending on whether the susceptible node is the i or j node in the SiIj expression
-        neighbourInfRHS = (sumSI[last.(edgeArrayNew)] - is) ./ s[last.(edgeArrayNew)];
-        neighbourInfLHS = (sumSI[first.(edgeArrayNew)] - si) ./ s[first.(edgeArrayNew)]; 
+        neighbourInfRHS = (sumSI[last.(edgeArrayNew)] - lambda*is) ./ s[last.(edgeArrayNew)];
+        neighbourInfLHS = (sumSI[first.(edgeArrayNew)] - lambda*si) ./ s[first.(edgeArrayNew)]; 
 
         # test if the S value in the above sums are non-zero by testing whether the result is finite
         for k=1:numEdges
